@@ -21,6 +21,7 @@ enum class ProcessorState
 class MacroProcessor
 {
 public:
+    MacroProcessor(std::ostream& output);
     void AddMacro(const std::string& identifier, const std::string& body);
 
     // Returns false if there was an error with processing the character.
@@ -34,7 +35,9 @@ private:
     void readIdentifier(char ch);
     void readMacroDefinition(char ch);
     void processError();
+    void unrollMacros();
 
+    std::ostream&                                 m_output;
     std::string                                   m_identifierBuffer = "";
     std::string                                   m_macroBodyBuffer  = "";
     char                                          m_prevChar         = ' ';

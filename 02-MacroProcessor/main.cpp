@@ -6,7 +6,7 @@
 
 int main(int argc, char ** argv)
 {
-    MacroProcessor p;
+    MacroProcessor p(std::cout);
 
     if (argc > 1)
     {
@@ -17,9 +17,11 @@ int main(int argc, char ** argv)
             body.append(argv[i]);
             if (i != argc - 1) body.append(" ");
         }
+        p.AddMacro(identifier, body);
     }
 
     char ch;
-	while ((ch = getchar()) != EOF) p << ch;
+    std::cin.unsetf(std::ios_base::skipws);
+	while (std::cin >> ch) p << ch;
     p.Finish();
 }
