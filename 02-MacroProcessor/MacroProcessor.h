@@ -15,6 +15,7 @@ enum class ProcessorState
     ReadingIdentifier,
     ReadingMacroIdentifier,
     ReadingMacroBody,
+    EndingMacro,
     Error,
 };
 

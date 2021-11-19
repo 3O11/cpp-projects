@@ -63,6 +63,7 @@ bool MacroProcessor::Push(char ch)
             break;
         case ProcessorState::ReadingMacroIdentifier:
         case ProcessorState::ReadingMacroBody:
+        case ProcessorState::EndingMacro:
             readMacroDefinition(ch);
             break;
         case ProcessorState::Error:
@@ -148,12 +149,27 @@ void MacroProcessor::readMacroDefinition(char ch)
     }
     else if (ch == '#' && std::isspace(m_prevChar) && m_state == ProcessorState::ReadingMacroBody)
     {
-        m_state = ProcessorState::Begin;
+        if (m_identifierBuffer == "")
+        {
+            m_state = ProcessorState::Error;
+            return;
+        }
+        
+        m_state = ProcessorState::EndingMacro;
         m_macros[m_identifierBuffer] = m_macroBodyBuffer;
         m_identifierBuffer = "";
         m_macroBodyBuffer = "";
         //printMacros(m_macros);
         unrollMacros();
+    }
+    else if (m_state == ProcessorState::EndingMacro)
+    {
+        if (m_prevChar == '#' && std::isalpha(ch))
+        {
+            m_state = ProcessorState::Error;
+        }
+
+        m_state = ProcessorState::Begin;
     }
 
     m_prevChar = ch;
@@ -179,6 +195,8 @@ void MacroProcessor::unrollMacros()
     {
         for (auto[unrolling_identifier, unrolling_body] : m_macros)
         {
+            if (identifier == unrolling_identifier) continue;
+
             replace_all(body, unrolling_identifier, unrolling_body);
         }
     }
