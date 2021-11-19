@@ -154,7 +154,7 @@ void MacroProcessor::readMacroDefinition(char ch)
             m_state = ProcessorState::Error;
             return;
         }
-        
+
         m_state = ProcessorState::EndingMacro;
         m_macros[m_identifierBuffer] = m_macroBodyBuffer;
         m_identifierBuffer = "";
@@ -168,8 +168,10 @@ void MacroProcessor::readMacroDefinition(char ch)
         {
             m_state = ProcessorState::Error;
         }
-
-        m_state = ProcessorState::Begin;
+        else
+        {
+            m_state = ProcessorState::Begin;
+        }
     }
 
     m_prevChar = ch;
