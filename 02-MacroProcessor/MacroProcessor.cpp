@@ -1,8 +1,5 @@
 #include "MacroProcessor.h"
 
-#include <iostream>
-#include <string_view>
-
 std::size_t replace_all(std::string& inout, std::string_view what, std::string_view with)
 {
     std::size_t count{};
@@ -14,14 +11,6 @@ std::size_t replace_all(std::string& inout, std::string_view what, std::string_v
     return count;
 }
 
-void printMacros(const std::unordered_map<std::string, std::string>& macros)
-{
-    for (auto[key, value] : macros)
-    {
-        std::cout << key << ":" << value << '\n';
-    }
-}
-
 MacroProcessor::MacroProcessor(std::ostream& output)
     : m_output(output)
 {
@@ -30,7 +19,6 @@ MacroProcessor::MacroProcessor(std::ostream& output)
 void MacroProcessor::AddMacro(const std::string& identifier, const std::string& body)
 {
     m_macros[identifier] = body;
-    //printMacros(m_macros);
 }
 
 bool MacroProcessor::Push(char ch)
@@ -67,11 +55,10 @@ bool MacroProcessor::Push(char ch)
             readMacroDefinition(ch);
             break;
         case ProcessorState::Error:
-            processError();
-            break;
+            return false;
     }
 
-    return !(m_state == ProcessorState::Error);
+    return true;;
 }
 
 bool MacroProcessor::operator<<(char ch)
@@ -81,7 +68,7 @@ bool MacroProcessor::operator<<(char ch)
 
 void MacroProcessor::Finish()
 {
-    m_output << m_identifierBuffer << m_prevChar;
+    if (!(m_state == ProcessorState::Error)) m_output << m_identifierBuffer << m_prevChar;
 }
 
 void MacroProcessor::propagateNonIdentifier(char ch)
@@ -151,44 +138,32 @@ void MacroProcessor::readMacroDefinition(char ch)
     {
         if (m_identifierBuffer == "")
         {
+            m_output << " Error\n";
             m_state = ProcessorState::Error;
             return;
         }
 
         m_state = ProcessorState::EndingMacro;
-        m_macros[m_identifierBuffer] = m_macroBodyBuffer;
-        m_identifierBuffer = "";
-        m_macroBodyBuffer = "";
-        //printMacros(m_macros);
-        unrollMacros();
     }
     else if (m_state == ProcessorState::EndingMacro)
     {
         if (m_prevChar == '#' && std::isalpha(ch))
         {
+            m_output << "Error\n";
             m_state = ProcessorState::Error;
         }
         else
         {
             m_state = ProcessorState::Begin;
         }
+
+        m_macros[m_identifierBuffer] = m_macroBodyBuffer;
+        m_identifierBuffer = "";
+        m_macroBodyBuffer = "";
+        unrollMacros();
     }
 
     m_prevChar = ch;
-}
-
-void MacroProcessor::processError()
-{
-    if (!m_processedError)
-    {
-        if (m_identifierBuffer.length() != 0)
-        {
-            m_output << m_identifierBuffer;
-            m_identifierBuffer = "";
-        }
-        m_output << "Error";
-        m_processedError = true;
-    }
 }
 
 void MacroProcessor::unrollMacros()

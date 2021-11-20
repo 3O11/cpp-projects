@@ -35,7 +35,6 @@ private:
     void propagateNonIdentifier(char ch);
     void readIdentifier(char ch);
     void readMacroDefinition(char ch);
-    void processError();
     void unrollMacros();
 
     std::ostream&                                 m_output;

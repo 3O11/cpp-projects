@@ -22,6 +22,12 @@ int main(int argc, char ** argv)
 
     char ch;
     std::cin.unsetf(std::ios_base::skipws);
-	while (std::cin >> ch) p << ch;
+	while (std::cin >> ch)
+    {
+        if(!(p << ch))
+        {
+            break;
+        }
+    }
     p.Finish();
 }
