@@ -10,3 +10,5 @@ set (CMAKE_VERBOSE_MAKEFILE ON)
 # Include sub-projects.
 add_subdirectory ("01-Counting")
 add_subdirectory ("02-MacroProcessor")
+add_subdirectory ("03-ImprovedMacroProcessor")
+add_subdirectory ("04-TokenMacroProcessor")
