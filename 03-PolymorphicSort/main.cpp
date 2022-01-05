@@ -31,7 +31,7 @@ std::vector<std::string> split(const std::string& str, char delim)
 	std::vector<std::string> split;
 	std::stringstream ss(str); // Can't use std::string_view :(
 	std::string word;
-	while(std::getline(ss, word, delim)) split.push_back(word);
+	while (std::getline(ss, word, delim)) split.push_back(word);
 	return split;
 }
 
@@ -56,9 +56,9 @@ public:
 	{
 		for (auto& opt : m_opts)
 		{
-			for (size_t i = 1; i < m_args.size(); ++i)
+			for (size_t i = 0; i < m_args.size(); ++i)
 			{
-				if (m_args[i].substr(0, 2) == std::string('-', opt))
+				if (m_args[i].substr(0, 2) == "-" + std::string(1, opt))
 				{
 					if (m_args[i].length() > 2)
 					{
@@ -89,7 +89,7 @@ public:
 
 			if (!colnum) return false;
 
-			m_parsedCols.push_back({arg[0], (size_t)*colnum});
+			m_parsedCols.push_back({ arg[0], (size_t)*colnum });
 		}
 
 		std::reverse(m_parsedCols.begin(), m_parsedCols.end());
@@ -99,7 +99,7 @@ public:
 
 	bool HasOptionValue(char option)
 	{
-		return m_optValues.find(option) != m_optValues.end(); 
+		return m_optValues.find(option) != m_optValues.end();
 	}
 
 	std::string GetOptionValue(char option)
@@ -125,10 +125,12 @@ private:
 class IColumn
 {
 public:
-  virtual bool operator< (const IColumn& col) const = 0;
-  virtual ~IColumn() {}
+	virtual bool operator< (const IColumn& col) const = 0;
+	virtual ~IColumn() {}
 private:
 };
+
+class Line;
 
 template <typename T>
 class Column : public IColumn
@@ -149,6 +151,8 @@ public:
 
 private:
 	T m_item;
+
+	friend Line;
 };
 
 class Line
@@ -158,15 +162,19 @@ public:
 		: m_line(line), m_sortCols()
 	{}
 
-	operator const std::string & () const
+	operator const std::string& () const
 	{
 		return m_line;
 	}
 
-	bool operator< (const Line& other) const
+	bool isLess(const Line& other, size_t colIndex) const
 	{
-		for (size_t i = 0; i < m_sortCols.size(); ++i) if ((*this)[i] < other[i]) return true;
-		return false;
+		if (this->colCount() != other.colCount())
+		{
+			return this->colCount() < other.colCount();
+		}
+		
+		return *m_sortCols[colIndex] < other[colIndex];
 	}
 
 	void addCol(std::unique_ptr<IColumn>&& col)
@@ -180,6 +188,11 @@ private:
 		return *m_sortCols[index];
 	}
 
+	const size_t colCount() const
+	{
+		return m_sortCols.size();
+	}
+
 	std::string m_line;
 	std::vector<std::unique_ptr<IColumn>> m_sortCols;
 };
@@ -188,7 +201,7 @@ class PolySort
 {
 public:
 	PolySort(const std::vector<ColIdentifier>& sortCols, std::istream& input = std::cin, std::ostream& output = std::cout)
-		: m_input(input), m_output(output), m_sortCols(sortCols), m_message(nullptr)
+		: m_input(input), m_output(output), m_sortCols(sortCols)
 	{}
 
 	bool Sort()
@@ -197,7 +210,7 @@ public:
 		size_t lineNum = 0;
 		while (std::getline(m_input, line))
 		{
-			m_lines.push_back({line});
+			m_lines.push_back({ line });
 			++lineNum;
 		}
 
@@ -205,7 +218,7 @@ public:
 		for (auto& line : m_lines)
 		{
 			auto splitLine = split(line, m_tokenSeparator);
-			for (auto&[type, number] : m_sortCols)
+			for (auto& [type, number] : m_sortCols)
 			{
 				switch (type)
 				{
@@ -213,17 +226,17 @@ public:
 					line.addCol(std::make_unique<Column<std::string>>(splitLine[number - 1]));
 					break;
 				case 'N':
+				{
+					auto val = strToInt(splitLine[number - 1]);
+					if (!val)
 					{
-						auto val = strToInt(splitLine[number - 1]);
-						if (!val)
-						{
-							m_message = "error: radka " + std::to_string(lineNum) + ", sloupec " + std::to_string(number) + " - nepripustny format";
-							return false;
-						}
-
-						line.addCol(std::make_unique<Column<int32_t>>(*val));
+						m_message = "error: radka " + std::to_string(lineNum) + ", sloupec " + std::to_string(number) + " - nepripustny format";
+						return false;
 					}
-					break;
+
+					line.addCol(std::make_unique<Column<int32_t>>(*val));
+				}
+				break;
 				default:
 					m_message = "error: radka " + std::to_string(lineNum) + ", sloupec " + std::to_string(number) + " - nepodporovany typ hodnoty";
 					return false;
@@ -233,7 +246,10 @@ public:
 			++lineNum;
 		}
 
-		std::sort(m_lines.begin(), m_lines.end());
+		for (size_t i = 0; i < m_sortCols.size(); i++)
+		{
+			std::stable_sort(m_lines.begin(), m_lines.end(), [i](const Line& a, const Line& b) { return a.isLess(b, i); });
+		}
 
 		for (const std::string& line : m_lines) m_output << line << '\n';
 
@@ -264,22 +280,22 @@ private:
 // Entry Point
 //////////////////////////////////////////////////////////////////////////////
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
 	if (argc <= 1) return 0;
 
 	std::vector<std::string> args(argv + 1, argv + argc);
-	ArgParser parser(args, {'i', 'o', 's'});
-	
-	if(!parser.Parse())
+	ArgParser parser(args, { 'i', 'o', 's' });
+
+	if (!parser.Parse())
 	{
 		std::cerr << "error: chybne argumenty\n";
 		return 0;
 	}
 
-	std::unique_ptr<std::istream> input  = nullptr;
+	std::unique_ptr<std::istream> input = nullptr;
 	std::unique_ptr<std::ostream> output = nullptr;
-	if (parser.HasOptionValue('i')) input  = std::make_unique<std::ifstream>(parser.GetOptionValue('i'));
+	if (parser.HasOptionValue('i')) input = std::make_unique<std::ifstream>(parser.GetOptionValue('i'));
 	if (parser.HasOptionValue('o')) output = std::make_unique<std::ofstream>(parser.GetOptionValue('o'));
 
 	PolySort p(parser.GetRequired(), input ? *input : std::cin, output ? *output : std::cout);
