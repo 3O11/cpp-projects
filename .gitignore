@@ -34,7 +34,7 @@
 # Ignore Visual Studio intermediaries and builds
 **/out
 **/.vs
-
+**/.vscode
 
 # Ignore Make build
 **/build
