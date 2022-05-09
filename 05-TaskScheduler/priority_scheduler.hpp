@@ -29,7 +29,7 @@ constexpr size_t CACHE_LINE_SIZE = 64;
  * 
  * @tparam VTLS_T virtual thread local storage type. Must be default constructable.
  */
-template<typename VTLS_T>
+template <typename VTLS_T>
 class scheduler final {
 public:
     /**
@@ -75,6 +75,7 @@ public:
         {
             return id() > other.id();
         }
+
     private:
         vthread_id_t m_thread_id;
         thread_local static VTLS_T m_thread_data;
@@ -105,8 +106,121 @@ public:
     scheduler(size_t num_threads, size_t time_to_idle_ms)
     {
         m_thread_count = num_threads;
-        m_threads.resize(num_threads);
-        for (size_t i = 0; i < num_threads; i++)
+
+        init_exec_threads(num_threads, time_to_idle_ms);
+        init_scheduling_thread();
+    }
+
+    ~scheduler()
+    {
+        for (auto&& thread : m_threads)
+        {
+            thread.join();
+        }
+        m_scheduler_thread.join();
+    }
+
+    /**
+     * @brief Add a new task into the scheduler's queue
+     * @note Can be called in parallel
+     * 
+     * @param task Task to be added
+     */
+    void add_task(std::unique_ptr<task> &&t)
+    {
+        {
+            std::lock_guard l(m_tasks_mtx);
+            m_tasks.push(std::move(t));
+        }
+        m_tasks_semaphore.release();
+    }
+private:
+    struct vthread_data
+    {
+        vthread_data(size_t i)
+            : info(i)
+        {}
+
+        bool operator> (const vthread_data& other) const
+        {
+            return info > other.info;
+        }
+
+        vthread_info info;
+        std::atomic<bool> sleeping = false;
+
+        std::unique_ptr<task> current_task;
+        std::binary_semaphore task_ready{0};
+        std::binary_semaphore sleep_trap{0};
+        std::binary_semaphore terminate{0};
+    };
+
+    void init_scheduling_thread()
+    {
+        m_scheduler_thread = std::thread([this]()
+        {
+            // The scheduler thread code goes here, it is a consumer for threads, and a
+            // producer for tasks (in relation to task-execution threads).
+            while (true)
+            {
+                if (m_threads_semaphore.try_acquire())
+                {
+                    if (m_tasks_semaphore.try_acquire())
+                    {
+                        std::scoped_lock l(m_free_threads_mtx, m_tasks_mtx);
+
+                        vthread_data& data = m_free_threads.top();
+                        m_free_threads.pop();
+                        data.current_task = std::move(m_tasks.front());
+                        m_tasks.pop();
+                        data.task_ready.release();
+
+                        if (data.sleeping) data.sleep_trap.release();
+                    }
+                    else
+                    {
+                        m_threads_semaphore.release();
+
+                        std::lock_guard l(m_free_threads_mtx);
+                        if (m_free_threads.size() >= m_thread_count)
+                        {
+                            auto free_threads_copy = m_free_threads;
+
+                            bool should_terminate = true;
+                            while (!free_threads_copy.empty())
+                            {
+                                auto && thread = free_threads_copy.top().get();
+                                if(!thread.sleeping)
+                                {
+                                    should_terminate = false;
+                                    break;
+                                }
+                                free_threads_copy.pop();
+                            }
+
+                            if (should_terminate)
+                            {
+                                while (!m_free_threads.empty())
+                                {
+                                    auto && thread = m_free_threads.top().get();
+                                    thread.terminate.release();
+                                    thread.sleep_trap.release();
+                                    m_free_threads.pop();
+                                }
+
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    void init_exec_threads(size_t thread_count, size_t time_to_idle_ms)
+    {
+        m_threads.resize(thread_count);
+        for (size_t i = 0; i < thread_count; i++)
         {
             m_threads[i] = std::thread(
                 [this, i, time_to_idle_ms]()
@@ -114,19 +228,21 @@ public:
                     // This is to improve readability, because without it, the
                     // calls are getting way too long.
                     using clock = std::chrono::high_resolution_clock;
-                    using time_point = std::chrono::steady_clock::time_point;
                     using duration = std::chrono::duration<double, std::milli>;
 
-                    // Per thread code goes here
-
                     // First goes the init code, that will only run once.
+                    {
+                        using namespace std::chrono_literals;
+                        std::this_thread::sleep_for(i * 10ms);
+                    }
+
                     vthread_data data(i);
                     {
                         std::lock_guard l(m_free_threads_mtx);
                         m_free_threads.push(data);
                     }
                     m_threads_semaphore.release();
-                    time_point wait_start = clock::now();
+                    auto wait_start = clock::now();
 
                     // Now we should put the task processing loop here.
                     while (!data.terminate.try_acquire())
@@ -163,117 +279,6 @@ public:
         }
     }
 
-    ~scheduler()
-    {
-        for (auto&& thread : m_threads)
-        {
-            thread.join();
-        }
-        m_scheduler_thread.join();
-    }
-
-    /**
-     * @brief Add a new task into the scheduler's queue
-     * @note Can be called in parallel
-     * 
-     * @param task Task to be added
-     */
-    void add_task(std::unique_ptr<task> &&t)
-    {
-        init_scheduling_thread();
-
-        {
-            std::lock_guard l(m_tasks_mtx);
-            m_tasks.push(std::move(t));
-        }
-        m_tasks_semaphore.release();
-    }
-private:
-    struct vthread_data
-    {
-        vthread_data(size_t i)
-            : info(i)
-        {}
-
-        bool operator> (const vthread_data& other) const
-        {
-            return info > other.info;
-        }
-
-        vthread_info info;
-        std::atomic<bool> sleeping = false;
-
-        std::unique_ptr<task> current_task;
-        std::binary_semaphore task_ready{0};
-        std::binary_semaphore sleep_trap{0};
-        std::binary_semaphore terminate{0};
-    };
-
-    void init_scheduling_thread()
-    {
-        std::call_once(m_init_scheduler, [this]()
-        {
-            m_scheduler_thread = std::thread([this]()
-            {
-                // The scheduler thread code goes here, it is a consumer for threads, and a
-                // producer for tasks (in relation to task-execution threads).
-                while (true)
-                {
-                    if (m_threads_semaphore.try_acquire())
-                    {
-                        if (m_tasks_semaphore.try_acquire())
-                        {
-                            std::scoped_lock l(m_free_threads_mtx, m_tasks_mtx);
-
-                            vthread_data& data = m_free_threads.top();
-                            m_free_threads.pop();
-                            data.current_task = std::move(m_tasks.front());
-                            m_tasks.pop();
-                            data.task_ready.release();
-
-                            if (data.sleeping) data.sleep_trap.release();
-                        }
-                        else
-                        {
-                            m_threads_semaphore.release();
-
-                            std::lock_guard l(m_free_threads_mtx);
-                            if (m_free_threads.size() >= m_thread_count)
-                            {
-                                auto free_threads_copy = m_free_threads;
-
-                                bool should_terminate = true;
-                                while (!free_threads_copy.empty())
-                                {
-                                    auto && thread = free_threads_copy.top().get();
-                                    if(!thread.sleeping)
-                                    {
-                                        should_terminate = false;
-                                        break;
-                                    }
-                                    free_threads_copy.pop();
-                                }
-
-                                if (should_terminate)
-                                {
-                                    while (!m_free_threads.empty())
-                                    {
-                                        auto && thread = m_free_threads.top().get();
-                                        thread.terminate.release();
-                                        thread.sleep_trap.release();
-                                        m_free_threads.pop();
-                                    }
-
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        });
-    }
-
     std::vector<std::thread> m_threads;
     std::thread m_scheduler_thread;
 
@@ -286,12 +291,13 @@ private:
     std::mutex m_tasks_mtx;
     std::queue<std::unique_ptr<task>> m_tasks;
 
-    std::once_flag m_init_scheduler;
-
     std::counting_semaphore<> m_threads_semaphore{0};
     std::counting_semaphore<> m_tasks_semaphore{0};
 
     size_t m_thread_count;
 };
+
+template <typename VTLS_T>
+thread_local VTLS_T scheduler<VTLS_T>::vthread_info::m_thread_data = VTLS_T{};
 
 #endif // PRIORITY_SCHEDULER_HPP
