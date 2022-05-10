@@ -23,9 +23,9 @@ public:
 
     void run(scheduler<int> &, scheduler<int>::vthread_info &i) override {
         i.data() = i.id();
-        printf("Thread %d is working very hard ...\n", i.data());
+        //printf("Thread %d is working very hard ...\n", i.data());
         std::this_thread::sleep_for(std::chrono::milliseconds(wait_ms));
-        printf("%s ends\n", this->name.c_str());
+        printf("%s ends on %d\n", this->name.c_str(), i.data());
     }
 };
 
@@ -34,21 +34,11 @@ int main() {
     auto num_threads = std::thread::hardware_concurrency();
 
     simple_scheduler s(num_threads, 500);
-    //s.add_task(std::make_unique<simple_task>("Waiting game for 0", 20000));
-    //s.add_task(std::make_unique<simple_task>("Waiting game for 1", 20100));
-    //s.add_task(std::make_unique<simple_task>("Waiting game for 2", 20200));
-    //s.add_task(std::make_unique<simple_task>("Waiting game for 3", 20300));
     for (size_t i = 1; i <= 64; ++i) {
-        threadSafeLog("Adding task " + std::to_string(i));
+        //threadSafeLog("Adding task " + std::to_string(i));
         s.add_task(std::make_unique<simple_task>("S-" + std::to_string(i), i * 100));
-        //std::this_thread::sleep_for(110ms);
     }
 
-    {
-        threadSafeLog("Starting sleep");
-        std::this_thread::sleep_for(30s);
-    }
-
-    threadSafeLog("Attempting to add task to dead scheduler");
-    s.add_task(std::make_unique<simple_task>("Dead", 100));
+    std::this_thread::sleep_for(20s);
+    s.add_task(std::make_unique<simple_task>("Dead", 0));
 }

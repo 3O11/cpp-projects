@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <semaphore>
 #include <vector>
 #include <queue>
 #include <algorithm>
@@ -102,21 +103,13 @@ public:
         {
             m_vthreads.push_back(std::make_unique<vthread_info>(i));
         }
-        
-        // At first, init all the threads at the same time.
-        for (size_t i = 0; i < num_threads; i++)
-        {
-            init_thread();
-        }
+
+        init_thread();
     }
 
     ~scheduler()
     {
-        // Wait for all threads to terminate
-        // This variable only here so that the compiler doesn't
-        // optimize the loop away.
-        volatile size_t count = 0;
-        while (m_active_threads) count++;
+        m_exit_semaphore.acquire();
     }
 
     /**
@@ -140,6 +133,7 @@ private:
     std::vector<std::unique_ptr<vthread_info>> m_vthreads;
     std::mutex m_tasks_mtx;
     std::queue<std::unique_ptr<task>> m_tasks;
+    std::binary_semaphore m_exit_semaphore{0};
 
     void init_thread()
     {
@@ -162,9 +156,6 @@ private:
             auto idle_start = clock::now();
             while (duration(clock::now() - idle_start).count() <= m_max_idle)
             {
-                // check is work is available
-                // -> if there is more work than the current amount of threads can satisfy, launch a new thread
-                // -> acquire the work, run it and clean up
                 {
                     std::lock_guard l(m_tasks_mtx);
                     if (m_tasks.size())
@@ -207,6 +198,7 @@ private:
             }
 
             --m_active_threads;
+            if (!m_active_threads) m_exit_semaphore.release();
         }).detach();
     }
 };
