@@ -38,3 +38,6 @@
 
 # Ignore Make build
 **/build
+
+# Ignore macOS files
+**/.DS_Store

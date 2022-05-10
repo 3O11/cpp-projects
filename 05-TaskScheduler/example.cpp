@@ -1,6 +1,15 @@
 #include "priority_scheduler.hpp"
 
 #include <string>
+#include <iostream>
+
+void threadSafeLog(const std::string& msg)
+{
+    static std::mutex mtx;
+
+    std::lock_guard l(mtx);
+    std::cout << msg << "\n";
+}
 
 struct no_vtls {};
 using simple_scheduler = scheduler<int>;
@@ -14,9 +23,9 @@ public:
 
     void run(scheduler<int> &, scheduler<int>::vthread_info &i) override {
         i.data() = i.id();
-        printf("Task is working very hard ... %d\n", i.data());
+        //printf("Thread %d is working very hard ...\n", i.data());
         std::this_thread::sleep_for(std::chrono::milliseconds(wait_ms));
-        printf("%s ends\n", this->name.c_str());
+        printf("%s ends on %d\n", this->name.c_str(), i.data());
     }
 };
 
@@ -26,15 +35,10 @@ int main() {
 
     simple_scheduler s(num_threads, 500);
     for (size_t i = 1; i <= 64; ++i) {
+        //threadSafeLog("Adding task " + std::to_string(i));
         s.add_task(std::make_unique<simple_task>("S-" + std::to_string(i), i * 100));
     }
 
-    {
-        threadSafeLog("Starting sleep");
-        using namespace std::chrono_literals;
-        std::this_thread::sleep_for(30s);
-    }
-
-    threadSafeLog("Attempting to add task to dead scheduler");
-    s.add_task(std::make_unique<simple_task>("Dead", 100));
+    std::this_thread::sleep_for(20s);
+    s.add_task(std::make_unique<simple_task>("Dead", 0));
 }
