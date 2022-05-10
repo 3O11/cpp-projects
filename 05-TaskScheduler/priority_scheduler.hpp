@@ -103,12 +103,13 @@ public:
         {
             m_vthreads.push_back(std::make_unique<vthread_info>(i));
         }
-
-        init_thread();
     }
 
     ~scheduler()
     {
+        // In case no thread has been launched, trip the semaphore now
+        std::call_once(m_start_scheduler, [this](){ m_exit_semaphore.release(); });
+
         m_exit_semaphore.acquire();
     }
 
@@ -122,6 +123,8 @@ public:
     {
         std::lock_guard l(m_tasks_mtx);
         m_tasks.push(std::move(t));
+
+        std::call_once(m_start_scheduler, [this](){ init_thread(); });
     }
 
 private:
@@ -134,6 +137,7 @@ private:
     std::mutex m_tasks_mtx;
     std::queue<std::unique_ptr<task>> m_tasks;
     std::binary_semaphore m_exit_semaphore{0};
+    std::once_flag m_start_scheduler;
 
     void init_thread()
     {
