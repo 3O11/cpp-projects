@@ -102,6 +102,7 @@ public:
         for (int64_t i = num_threads - 1; i >= 0; --i)
         {
             m_vthreads.push_back(std::make_unique<vthread_info>(i));
+            m_vthreads_semaphore.release();
         }
     }
 
@@ -134,6 +135,7 @@ private:
     std::atomic<size_t> m_idle_threads   = 0;
     std::mutex m_vthreads_mtx;
     std::vector<std::unique_ptr<vthread_info>> m_vthreads;
+    std::counting_semaphore<> m_vthreads_semaphore{0};
     std::mutex m_tasks_mtx;
     std::queue<std::unique_ptr<task>> m_tasks;
     std::binary_semaphore m_exit_semaphore{0};
@@ -176,9 +178,7 @@ private:
                 }
             
                 {
-                    // There is no check if the vthread queue is empty, because
-                    // each thread can have at most one vthread, and the amount
-                    // of threads is the same as the amount of vthreads.
+                    m_vthreads_semaphore.acquire();
                     std::lock_guard l(m_vthreads_mtx);
                     current_vthread = std::move(m_vthreads.back());
                     m_vthreads.pop_back();
@@ -195,9 +195,10 @@ private:
                 {
                     std::lock_guard l(m_vthreads_mtx);
                     m_vthreads.insert(
-                        std::upper_bound(m_vthreads.begin(), m_vthreads.end(), current_vthread, [](auto&& a, auto&& b){ return a > b; }),
+                        std::upper_bound(m_vthreads.begin(), m_vthreads.end(), current_vthread, [](auto&& a, auto&& b){ return *a > *b; }),
                         std::move(current_vthread)
                     );
+                    m_vthreads_semaphore.release();
                 }
             }
 
