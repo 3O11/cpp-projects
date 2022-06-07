@@ -1,0 +1,4 @@
+(42)
+(3.14)
+(Some_quite_large_string_containing_Foo_and_Bar)
+Done.

@@ -1,0 +1,9 @@
+iota_view[0] = 0
+iota_view[1] = 1
+iota_view[2] = 2
+iota_view[3] = 3
+iota_view[4] = 4
+char_view[65] = A
+char_view[66] = B
+char_view[67] = C
+Done.

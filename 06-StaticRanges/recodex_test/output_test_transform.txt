@@ -1,0 +1,7 @@
+r2.u = (42)
+r2.v = (3.140000)
+r2.w = 46
+r4.x = 2
+r4.y = 1.14
+r4.z = Some_quite_large_string_containing_Foo_and_Bar_plus_suffix
+Done.

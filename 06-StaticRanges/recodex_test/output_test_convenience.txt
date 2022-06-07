@@ -1,0 +1,7 @@
+r1.x = 42
+r1.y = 3.14
+r1.z = Some_quite_large_string_containing_Foo_and_Bar
+r2.x = 42 stolen from r.x = 42
+r2.y = 3.14 stolen from r.y = 3.14
+r2.z = Some_quite_large_string_containing_Foo_and_Bar stolen from r.z = 
+Done.

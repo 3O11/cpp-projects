@@ -1,0 +1,7 @@
+r_view.x = 42
+r_view.y = 3.14
+r_view.z = Some_quite_large_string_containing_Foo_and_Bar
+r.x = 2
+r.y = 1.14
+r.z = Some_quite_large_string_containing_Foo_and_Bar_and_something_else_appended
+Done.
