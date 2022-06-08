@@ -12,16 +12,15 @@
 // -> Common declarations - Done
 // -> all_view            - 
 // -> concepts            -
-// -> convenience         -
+// -> convenience         - Done
 // -> copy                -
-// -> for_each            -
+// -> for_each            - Done
 // -> iota_view           -
 // -> static_iota_view    -
-// -> std                 -
+// -> std                 - Done
 // -> to                  -
 // -> transform_view      -
 // -> transform           -
-
 
 namespace static_ranges
 {
@@ -52,6 +51,79 @@ namespace static_ranges
     concept view = range<T> && std::is_base_of_v<view_base, T>;
 
     //////////////////////////////////////////////////////////////////////////
+    // std
+    //////////////////////////////////////////////////////////////////////////
+
+    template<typename T, typename U>
+    struct range_traits<std::pair<T, U>> : std::integral_constant<std::size_t, 2>
+    {
+        template<std::size_t I>
+        static auto&& get(std::pair<T, U>& r)
+        {
+            if constexpr (I == 0) return r.first;
+            if constexpr (I == 1) return r.second;
+        }
+
+        template<std::size_t I>
+        static auto&& get(std::pair<T, U>&& r)
+        {
+            if constexpr (I == 0) return std::move(r.first);
+            if constexpr (I == 1) return std::move(r.second);
+        }
+
+        template<std::size_t I>
+        static auto&& get(const std::pair<T, U>& r)
+        {
+            if constexpr (I == 0) return r.first;
+            if constexpr (I == 1) return r.second;
+        }
+    };
+
+    template<typename T, std::size_t N>
+    struct range_traits<std::array<T, N>> : std::integral_constant<std::size_t, N>
+    {
+        template<std::size_t I>
+        static auto&& get(std::array<T, N>& r)
+        {
+            if (I < N) return r[I];
+        }
+
+        template<std::size_t I>
+        static auto&& get(std::array<T, N>&& r)
+        {
+            if (I < N) return std::move(r[I]);
+        }
+
+        template<std::size_t I>
+        static auto&& get(const std::array<T, N>& r)
+        {
+            if (I < N) return r[I];
+        }
+    };
+
+    template<typename ... Pack>
+    struct range_traits<std::tuple<Pack ...>> : std::integral_constant<std::size_t, sizeof...(Pack)>
+    {
+        template<std::size_t I>
+        static auto&& get(std::tuple<Pack ...>& r)
+        {
+            return std::get<I>(r);
+        }
+
+        template<std::size_t I>
+        static auto&& get(std::tuple<Pack ...>&& r)
+        {
+            return std::move(std::get<I>(r));
+        }
+
+        template<std::size_t I>
+        static auto&& get(const std::tuple<Pack ...>& r)
+        {
+            return std::get<I>(r);
+        }
+    };
+
+    //////////////////////////////////////////////////////////////////////////
     // convenience
     //////////////////////////////////////////////////////////////////////////
 
@@ -67,9 +139,13 @@ namespace static_ranges
     template <std::size_t N, typename T>
     static constexpr std::size_t size_v<std::array<T, N>> = N;
 
-    template <std::size_t I>
-    constexpr auto&& element(range auto&& r)
+    template <std::size_t I, range R>
+    constexpr auto&& element(R&& r)
     {
+        // There should be no need for any other special cases, because constness
+        // should be preserved by default. I'm not sure if this can be done in a
+        // though, it seems to me that it's not possible to prevent the decay of
+        // the rvalue reference to lvalue reference.
         if constexpr (std::is_rvalue_reference_v<decltype(r)>)
         {
             return range_traits<std::remove_cvref_t<decltype(r)>>::template get<I>(std::move(r));
@@ -80,36 +156,26 @@ namespace static_ranges
         }
     }
 
-    template <std::size_t I, typename U, typename V>
-    constexpr auto&& element(std::pair<U, V>&& r)
-    {
-        static_assert(I >= 0 && I <= 1);
-        if constexpr (I == 0)
-        {
-            return r.first();
-        }
-        else
-        {
-            return r.second();
-        }
-    }
-
-    template <std::size_t I, typename ... Pack>
-    constexpr auto&& element(std::tuple<Pack ...> r)
-    {
-
-    }
-
     //////////////////////////////////////////////////////////////////////////
     // for_each
     //////////////////////////////////////////////////////////////////////////
 
     namespace detail
     {
+        template<std::size_t I, std::size_t Size>
+        constexpr void for_each_impl(range auto&& r, auto f)
+        {
+            if constexpr (I < Size)
+            {
+                f(element<I>(r));
+                for_each_impl<I + 1, Size>(r, f);
+            }
+        }
     }
 
     constexpr void for_each(range auto&& r, auto f)
     {
+        detail::for_each_impl<0, size_v<std::remove_cvref_t<decltype(r)>>>(r, f);
     }
 
     namespace views

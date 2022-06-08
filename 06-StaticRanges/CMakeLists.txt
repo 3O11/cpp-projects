@@ -18,8 +18,13 @@ add_executable(sr_for_each
     "static_for_test_for_each.cpp"
 )
 
+add_executable(sr_std
+    "static_for_test_std.cpp"
+)
+
 set_property(TARGET StaticRanges PROPERTY CXX_STANDARD 20)
 set_property(TARGET sr_all_view PROPERTY CXX_STANDARD 20)
 set_property(TARGET sr_concepts PROPERTY CXX_STANDARD 20)
 set_property(TARGET sr_convenience PROPERTY CXX_STANDARD 20)
 set_property(TARGET sr_for_each PROPERTY CXX_STANDARD 20)
+set_property(TARGET sr_std PROPERTY CXX_STANDARD 20)
