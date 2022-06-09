@@ -10,17 +10,17 @@
 // Feature list:
 // -> Namespaces          - Done
 // -> Common declarations - Done
-// -> all_view            - 
+// -> all_view            - Done
 // -> concepts            -
 // -> convenience         - Done
-// -> copy                -
+// -> copy                - Done
 // -> for_each            - Done
-// -> iota_view           -
-// -> static_iota_view    -
+// -> iota_view           - Done (I'm not sure what's different, my local diff shows no difference)
+// -> static_iota_view    - Done
 // -> std                 - Done
-// -> to                  -
+// -> to                  - Done
 // -> transform_view      -
-// -> transform           -
+// -> transform           - Done
 
 namespace static_ranges
 {
@@ -85,19 +85,19 @@ namespace static_ranges
         template<std::size_t I>
         static auto&& get(std::array<T, N>& r)
         {
-            if (I < N) return r[I];
+            if constexpr (I < N) return r[I];
         }
 
         template<std::size_t I>
         static auto&& get(std::array<T, N>&& r)
         {
-            if (I < N) return std::move(r[I]);
+            if constexpr (I < N) return std::move(r[I]);
         }
 
         template<std::size_t I>
         static auto&& get(const std::array<T, N>& r)
         {
-            if (I < N) return r[I];
+            if constexpr (I < N) return r[I];
         }
     };
 
@@ -107,19 +107,19 @@ namespace static_ranges
         template<std::size_t I>
         static auto&& get(std::tuple<Pack ...>& r)
         {
-            return std::get<I>(r);
+            if constexpr (I < sizeof...(Pack)) return std::get<I>(r);
         }
 
         template<std::size_t I>
         static auto&& get(std::tuple<Pack ...>&& r)
         {
-            return std::move(std::get<I>(r));
+            if constexpr (I < sizeof...(Pack)) return std::move(std::get<I>(r));
         }
 
         template<std::size_t I>
         static auto&& get(const std::tuple<Pack ...>& r)
         {
-            return std::get<I>(r);
+            if constexpr (I < sizeof...(Pack)) return std::get<I>(r);
         }
     };
 
@@ -140,20 +140,10 @@ namespace static_ranges
     static constexpr std::size_t size_v<std::array<T, N>> = N;
 
     template <std::size_t I, range R>
-    constexpr auto&& element(R&& r)
+    inline constexpr auto&& element(R&& r)
     {
-        // There should be no need for any other special cases, because constness
-        // should be preserved by default. I'm not sure if this can be done in a
-        // though, it seems to me that it's not possible to prevent the decay of
-        // the rvalue reference to lvalue reference.
-        if constexpr (std::is_rvalue_reference_v<decltype(r)>)
-        {
-            return range_traits<std::remove_cvref_t<decltype(r)>>::template get<I>(std::move(r));
-        }
-        else
-        {
-            return range_traits<std::remove_cvref_t<decltype(r)>>::template get<I>(r);
-        }
+        auto&& e = range_traits<std::remove_cvref_t<R>>::template get<I>(std::forward<R>(r));
+        return std::forward<decltype(e)>(e);
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -162,8 +152,8 @@ namespace static_ranges
 
     namespace detail
     {
-        template<std::size_t I, std::size_t Size>
-        constexpr void for_each_impl(range auto&& r, auto f)
+        template<std::size_t I, std::size_t Size, range R, typename Func>
+        constexpr void for_each_impl(R&& r, Func f)
         {
             if constexpr (I < Size)
             {
@@ -173,9 +163,78 @@ namespace static_ranges
         }
     }
 
-    constexpr void for_each(range auto&& r, auto f)
+    template<range R, typename Func>
+    inline constexpr void for_each(R&& r, Func f)
     {
-        detail::for_each_impl<0, size_v<std::remove_cvref_t<decltype(r)>>>(r, f);
+        detail::for_each_impl<0, size_v<std::remove_cvref_t<R>>>(r, f);
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // copy
+    //////////////////////////////////////////////////////////////////////////
+
+    namespace detail
+    {
+        template<std::size_t I, std::size_t Size, range R1, range R2>
+        inline constexpr void copy_impl(R1&& r1, R2&& r2)
+        {
+            if constexpr (I < Size)
+            {
+                static_assert(std::is_assignable_v<decltype(element<I>(r2)), decltype(element<I>(r1))>);
+                element<I>(r2) = element<I>(r1);
+                copy_impl<I + 1, Size, R1, R2>(r1, r2);
+            }
+        }
+    }
+
+    template<range R1, range R2>
+    inline constexpr void copy(R1&& r1, R2&& r2)
+    {
+        static_assert(size_v<R1> == size_v<R2>);
+
+        detail::copy_impl<0, size_v<R1>, R1, R2>(std::forward<R1>(r1), std::forward<R2>(r2));
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // to
+    //////////////////////////////////////////////////////////////////////////
+
+    namespace detail
+    {
+        template <std::size_t I, std::size_t Size, range R, typename... Types>
+        inline constexpr auto to_tuple_impl(R&& r, std::tuple<Types...> tuple)
+        {
+            if constexpr (I < Size)
+            {
+                return to_tuple_impl<I + 1, Size>(r, std::tuple_cat(tuple, std::tuple{element<I>(r)}));
+            }
+            else
+            {
+                return tuple;
+            }
+        }
+    }
+
+    template<range R>
+    inline constexpr auto to_tuple(R&& r)
+    {
+        return detail::to_tuple_impl<0, size_v<R>, R>(r, {});
+    }
+
+    template<range R>
+    inline constexpr auto to_pair(R&& r)
+    {
+        static_assert(size_v<R> == 2);
+
+        return std::pair(element<0>(r), element<1>(r));
+    }
+
+    template<typename T, range R>
+    inline constexpr auto to_array(R&& r)
+    {
+        std::array<T, size_v<R>> out;
+        copy(r, out);
+        return out;
     }
 
     namespace views
@@ -184,16 +243,176 @@ namespace static_ranges
         // all_view
         //////////////////////////////////////////////////////////////////////
 
-        template<typename T>
-        struct all
+        template<range R>
+        struct all_view : view_base
         {
-            
+            constexpr all_view(R& r)
+                : ref(r)
+            {}
+
+            operator R& ()
+            {
+                return ref;
+            }
+
+            // std::reference_wrapper was thankfully not necessary here.
+            // I suspect that GCC has some problems with infering the types
+            // because using std::reference_wrapper<std::remove_cvref_t<R>>
+            // worked for me under Clang 13.1.6, but not under GCC 11.2.
+            R& ref;
+        };
+
+        template<typename RV>
+        auto all(RV& rv)
+        {
+            if constexpr (view<RV>)
+            {
+                return rv;
+            }
+            else
+            {
+                return all_view<RV>(rv);
+            }
         };
 
         //////////////////////////////////////////////////////////////////////
         // iota_view
         //////////////////////////////////////////////////////////////////////
+
+        template<typename T, std::size_t N>
+        struct iota_view : view_base
+        {};
+
+        template<typename T, std::size_t N>
+        auto iota()
+        {
+            static_assert(std::is_integral_v<T>);
+            return iota_view<T, N>();
+        }
+
+        //////////////////////////////////////////////////////////////////////
+        // static_iota_view
+        //////////////////////////////////////////////////////////////////////
+
+        template<typename T, std::size_t N>
+        struct static_iota_view : view_base
+        {};
+
+        template<typename T, std::size_t N>
+        auto static_iota()
+        {
+            static_assert(std::is_integral_v<T>);
+            return static_iota_view<T, N>();
+        }
+
+        //////////////////////////////////////////////////////////////////////
+        // transform_view
+        //////////////////////////////////////////////////////////////////////
+
+        template<range R, typename Func>
+        struct transform_view : view_base
+        {
+            constexpr transform_view(R& r, Func f)
+                : ref(r), f(f)
+            {}
+
+            R& ref;
+            Func f;
+        };
+
+        template<range R, typename Func>
+        inline constexpr views::transform_view<R, Func> transform(R&& r, Func f)
+        {
+            return views::transform_view<R, Func>(r, f);
+        }
     }
+
+    //////////////////////////////////////////////////////////////////////////
+    // transform
+    //////////////////////////////////////////////////////////////////////////
+
+    namespace detail
+    {
+        template<std::size_t I, std::size_t Size, range R1, range R2, typename Func>
+        inline constexpr void transform_impl(R1&& r1, R2&& r2, Func f)
+        {
+            if constexpr (I < Size)
+            {
+                element<I>(r2) = f(element<I>(r1));
+                transform_impl<I + 1, Size>(std::forward<R1>(r1), std::forward<R2>(r2), f);
+            }
+        }
+
+        template<std::size_t I, std::size_t Size, range R1, range R2, range R3, typename Func>
+        inline constexpr void transform_impl(R1&& r1, R2&& r2, R3&& r3, Func f)
+        {
+            if constexpr (I < Size)
+            {
+                element<I>(r3) = f(element<I>(r1), element<I>(r2));
+                transform_impl<I + 1, Size>(std::forward<R1>(r1), std::forward<R2>(r2), std::forward<R3>(r3), f);
+            }
+        }
+    }
+
+    template<range R1, range R2, typename Func>
+    inline constexpr void transform(R1&& r1, R2&& r2, Func f)
+    {
+        static_assert(size_v<R1> == size_v<R2>);
+
+        detail::transform_impl<0, size_v<R1>>(std::forward<R1>(r1), std::forward<R2>(r2), f);
+    }
+
+    template<range R1, range R2, range R3, typename Func>
+    inline constexpr void transform(R1&& r1, R2&& r2, R3&& r3, Func f)
+    {
+        static_assert(size_v<R1> == size_v<R2> && size_v<R3> == size_v<R1>);
+
+        detail::transform_impl<0, size_v<R1>>(std::forward<R1>(r1), std::forward<R2>(r2), std::forward<R3>(r3), f);
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // view traits (needed for proper range functionality)
+    //////////////////////////////////////////////////////////////////////////
+
+    template<range R>
+    struct range_traits<views::all_view<R>> : std::integral_constant<std::size_t, size_v<R>>
+    {
+        template<std::size_t I>
+        static auto&& get(views::all_view<R>& v)
+        {
+            if constexpr (I < size_v<R>) return range_traits<std::remove_cvref_t<R>>::template get<I>(v.ref);
+        }
+    };
+
+    template<typename T, std::size_t N>
+    struct range_traits<views::iota_view<T, N>> : std::integral_constant<std::size_t, N>
+    {
+        template<std::size_t I>
+        static auto get(views::iota_view<T, N>)
+        {
+            if constexpr (I < N) return T(I);
+        }
+    };
+
+    template<typename T, std::size_t N>
+    struct range_traits<views::static_iota_view<T, N>> : std::integral_constant<std::size_t, N>
+    {
+        template<std::size_t I>
+        static auto get(views::static_iota_view<T, N>)
+        {
+            if constexpr (I < N) return std::integral_constant<T, I>();
+        }
+    };
+
+    template<range R, typename Func>
+    struct range_traits<views::transform_view<R, Func>> : std::integral_constant<std::size_t, size_v<R>>
+    {
+        template<std::size_t I>
+        static auto get(views::transform_view<R, Func> v)
+        {
+            if constexpr (I < size_v<R>) return v.f(range_traits<std::remove_cvref_t<R>>::template get<I>(v.ref));
+        }
+    };
 }
 
 namespace static_views = static_ranges::views;

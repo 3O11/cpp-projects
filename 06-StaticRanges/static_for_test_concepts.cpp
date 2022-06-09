@@ -30,12 +30,12 @@ static_assert(! static_ranges::view<my_pair>, "pair shall not be a view");
 static_assert(! static_ranges::view<my_tuple>, "tuple shall not be a view");
 static_assert(! static_ranges::view<my_array>, "array shall not be a view");
 
-inline constexpr auto my_iota = static_views::iota<int, 10>();
+auto my_iota = static_views::iota<int, 10>();
 
 static_assert(static_ranges::range<decltype(my_iota)>, "iota() shall be a range");
 static_assert(static_ranges::view<decltype(my_iota)>, "iota() shall be a view");
 
-inline constexpr auto my_static_iota = static_views::static_iota<int, 10>();
+auto my_static_iota = static_views::static_iota<int, 10>();
 
 static_assert(static_ranges::range<decltype(my_static_iota)>, "static_iota() shall be a range");
 static_assert(static_ranges::view<decltype(my_static_iota)>, "static_iota() shall be a view");

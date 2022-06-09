@@ -7,9 +7,9 @@ using my_pair = std::pair<int, std::string>;
 using my_tuple = std::tuple<int, double, std::string>;
 using my_array = std::array<int, 10>;
 
-inline constexpr auto my_iota = static_views::iota<int, 10>();
+inline auto my_iota = static_views::iota<int, 10>();
 
-inline constexpr auto my_static_iota = static_views::static_iota<int, 10>();
+inline auto my_static_iota = static_views::static_iota<int, 10>();
 
 int main(int argc, char** argv)
 {
